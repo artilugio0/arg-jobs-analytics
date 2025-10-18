@@ -63,9 +63,10 @@ func main() {
 type JobID = string
 
 type JobPosting struct {
-	Company     string
-	Description string
-	Title       string
+	JobID       string `json:"job_id"`
+	Company     string `json:"company"`
+	Description string `json:"description"`
+	Title       string `json:"title"`
 }
 
 type jobPostingsResponse struct {
@@ -170,6 +171,7 @@ func jobPostings(httpClient *http.Client, limiter *rate.Limiter, jid JobID, acce
 	}
 
 	return &JobPosting{
+		JobID:       jid,
 		Company:     content.CompanyDetails.Company.Result.Name,
 		Description: content.Description.Text,
 		Title:       content.Title,
