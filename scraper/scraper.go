@@ -1,30 +1,62 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
+	"sync"
+
+	"golang.org/x/time/rate"
 )
 
 const geoIdArgentina = "100446943"
 
 func main() {
+	if len(os.Args) != 2 {
+		fmt.Fprintf(os.Stderr, "output file not specified\n")
+		os.Exit(1)
+	}
+	dataDir := os.Args[1]
+
 	httpClient := &http.Client{}
 	accessToken := os.Getenv("LINKEDIN_TOKEN")
 
-	listings := jobListings(httpClient, accessToken, "data scientist")
+	limiter := rate.NewLimiter(10, 1)
+
+	listings := jobListings(httpClient, limiter, accessToken, "data scientist")
+
+	var wg sync.WaitGroup
+
+	jobs := []*JobPosting{}
 
 	for jid := range listings {
-		fmt.Printf("Fetching data for job %s\n", jid)
-		job, err := jobPostings(httpClient, jid, accessToken)
-		if err != nil {
-			log.Printf("could not get job posting for jog %s: %v", jid, err)
-		}
+		wg.Add(1)
 
-		fmt.Printf("Company: %s\tJob:%s\t(%s)\n", job.Company, job.Title, jid)
+		go func() {
+			defer wg.Done()
+
+			limiter.Wait(context.TODO())
+			log.Printf("Fetching data for job %s\n", jid)
+
+			job, err := jobPostings(httpClient, limiter, jid, accessToken)
+			if err != nil {
+				log.Printf("could not get job posting for jog %s: %v", jid, err)
+				return
+			}
+
+			jobs = append(jobs, job)
+		}()
+	}
+
+	wg.Wait()
+
+	if err := saveJobsToFile(jobs, dataDir); err != nil {
+		log.Fatal("could not save jobs: %v", err)
 	}
 }
 
@@ -63,14 +95,14 @@ type jobListingsResponse struct {
 	} `json:"paging"`
 }
 
-func jobListings(httpClient *http.Client, accessToken, search string) <-chan JobID {
+func jobListings(httpClient *http.Client, limiter *rate.Limiter, accessToken, search string) <-chan JobID {
 	result := make(chan JobID)
 
 	go func() {
 		defer close(result)
 
 		start := 0
-		count := 25
+		count := 100
 		done := false
 
 		for !done {
@@ -82,6 +114,7 @@ func jobListings(httpClient *http.Client, accessToken, search string) <-chan Job
 			}
 			authRequest(req, accessToken)
 
+			limiter.Wait(context.TODO())
 			resp, err := httpClient.Do(req)
 			if err != nil {
 				log.Printf("error making jobListings request: %v", err)
@@ -112,12 +145,14 @@ func jobListings(httpClient *http.Client, accessToken, search string) <-chan Job
 	return result
 }
 
-func jobPostings(httpClient *http.Client, jid JobID, accessToken string) (*JobPosting, error) {
+func jobPostings(httpClient *http.Client, limiter *rate.Limiter, jid JobID, accessToken string) (*JobPosting, error) {
 	req, err := http.NewRequest("GET", "https://www.linkedin.com/voyager/api/jobs/jobPostings/"+jid+"?decorationId=com.linkedin.voyager.deco.jobs.web.shared.WebFullJobPosting-65&topN=1&topNRequestedFlavors=List(TOP_APPLICANT,IN_NETWORK,COMPANY_RECRUIT,SCHOOL_RECRUIT,HIDDEN_GEM,ACTIVELY_HIRING_COMPANY)", nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating jobPostings request: %v", err)
 	}
 	authRequest(req, accessToken)
+
+	limiter.Wait(context.TODO())
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -145,4 +180,25 @@ func authRequest(req *http.Request, accessToken string) {
 	req.Header.Add("Csrf-Token", "csrf-token")
 	req.AddCookie(&http.Cookie{Name: "JSESSIONID", Value: "csrf-token"})
 	req.AddCookie(&http.Cookie{Name: "li_at", Value: accessToken})
+}
+
+func saveJobsToFile(jobs []*JobPosting, jobsFilePath string) error {
+	dir := filepath.Dir(jobsFilePath)
+	if _, err := os.Stat(dir); err != nil {
+		if err := os.MkdirAll(dir, 0700); err != nil {
+			return fmt.Errorf("could not create directory '%s': %v", dir, err)
+		}
+	}
+
+	f, err := os.OpenFile(jobsFilePath, os.O_RDWR|os.O_CREATE, 0600)
+	if err != nil {
+		return fmt.Errorf("could not open file '%s': %v", jobsFilePath, err)
+	}
+	defer f.Close()
+
+	if err := json.NewEncoder(f).Encode(jobs); err != nil {
+		return fmt.Errorf("could not encode jobs to json: %v", err)
+	}
+
+	return nil
 }
