@@ -17,10 +17,20 @@
           gopls
           gotools
 
+          uv
           python313
-          python313Packages.matplotlib
-          python313Packages.jupyter
         ];
+
+        shellHook = ''
+          export UV_PYTHON_DOWNLOADS=never
+          export UV_PYTHON=${pkgs.python313}/bin/python  # Use Nix's Python
+          export UV_NO_SYNC=1  # Skip uv's venv sync if using Nix's Python
+          export LD_LIBRARY_PATH=${pkgs.lib.makeLibraryPath [
+            pkgs.zlib
+            pkgs.stdenv.cc.cc.lib
+            # Add more as needed
+          ]}:$LD_LIBRARY_PATH
+        '';
       };
     };
 }
