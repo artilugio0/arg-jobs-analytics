@@ -107,7 +107,7 @@ func jobListings(httpClient *http.Client, limiter *rate.Limiter, accessToken, se
 		done := false
 
 		for !done {
-			url := fmt.Sprintf("https://www.linkedin.com/voyager/api/voyagerJobsDashJobCards?decorationId=com.linkedin.voyager.dash.deco.jobs.search.JobSearchCardsCollection-220&q=jobSearch&query=(origin:JOB_SEARCH_PAGE_LOCATION_AUTOCOMPLETE,keywords:%%22data%%20scientist%%22,locationUnion:(geoId:%s))&start=%d&count=%d", geoIdArgentina, start, count)
+			url := jobListingsUrl(geoIdArgentina, start, count)
 			req, err := http.NewRequest("GET", url, nil)
 			if err != nil {
 				log.Printf("error creating jobListings request: %v", err)
@@ -147,7 +147,7 @@ func jobListings(httpClient *http.Client, limiter *rate.Limiter, accessToken, se
 }
 
 func jobPostings(httpClient *http.Client, limiter *rate.Limiter, jid JobID, accessToken string) (*JobPosting, error) {
-	req, err := http.NewRequest("GET", "https://www.linkedin.com/voyager/api/jobs/jobPostings/"+jid+"?decorationId=com.linkedin.voyager.deco.jobs.web.shared.WebFullJobPosting-65&topN=1&topNRequestedFlavors=List(TOP_APPLICANT,IN_NETWORK,COMPANY_RECRUIT,SCHOOL_RECRUIT,HIDDEN_GEM,ACTIVELY_HIRING_COMPANY)", nil)
+	req, err := http.NewRequest("GET", jobPostingsUrl(jid), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating jobPostings request: %v", err)
 	}
@@ -203,4 +203,12 @@ func saveJobsToFile(jobs []*JobPosting, jobsFilePath string) error {
 	}
 
 	return nil
+}
+
+func jobPostingsUrl(jid JobID) string {
+	return "https://www.linkedin.com/voyager/api/jobs/jobPostings/" + jid + "?decorationId=com.linkedin.voyager.deco.jobs.web.shared.WebFullJobPosting-65&topN=1&topNRequestedFlavors=List(TOP_APPLICANT,IN_NETWORK,COMPANY_RECRUIT,SCHOOL_RECRUIT,HIDDEN_GEM,ACTIVELY_HIRING_COMPANY)"
+}
+
+func jobListingsUrl(geoId string, start, count int) string {
+	return fmt.Sprintf("https://www.linkedin.com/voyager/api/voyagerJobsDashJobCards?decorationId=com.linkedin.voyager.dash.deco.jobs.search.JobSearchCardsCollection-220&q=jobSearch&query=(origin:JOB_SEARCH_PAGE_LOCATION_AUTOCOMPLETE,keywords:%%22data%%20scientist%%22,locationUnion:(geoId:%s))&start=%d&count=%d", geoIdArgentina, start, count)
 }
