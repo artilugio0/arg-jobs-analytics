@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -56,15 +57,11 @@ func getJobCategories() []JobCategory {
 }
 
 func main() {
-	if len(os.Args) < 2 || len(os.Args) > 3 {
-		fmt.Fprintf(os.Stderr, "usage: %s <output_file> [sqlite_db_file]\n", os.Args[0])
+	if len(os.Args) != 2 {
+		fmt.Fprintf(os.Stderr, "usage: %s <output_file> (must have .json, .sqlite, or .db extension)\n", os.Args[0])
 		os.Exit(1)
 	}
-	dataDir := os.Args[1]
-	var sqliteFile string
-	if len(os.Args) == 3 {
-		sqliteFile = os.Args[2]
-	}
+	outputFile := os.Args[1]
 
 	httpClient := &http.Client{}
 	accessToken := os.Getenv("LINKEDIN_TOKEN")
@@ -144,14 +141,19 @@ func main() {
 
 	wg.Wait()
 
-	if sqliteFile != "" {
-		if err := saveJobsToSQLite(jobGroups, sqliteFile); err != nil {
-			log.Fatal("could not save jobs to SQLite: %v", err)
-		}
-	} else {
-		if err := saveJobsToFile(jobGroups, dataDir); err != nil {
+	// Determine storage based on file extension
+	ext := strings.ToLower(filepath.Ext(outputFile))
+	switch ext {
+	case ".json":
+		if err := saveJobsToFile(jobGroups, outputFile); err != nil {
 			log.Fatal("could not save jobs to file: %v", err)
 		}
+	case ".sqlite", ".db":
+		if err := saveJobsToSQLite(jobGroups, outputFile); err != nil {
+			log.Fatal("could not save jobs to SQLite: %v", err)
+		}
+	default:
+		log.Fatal("unsupported file extension: must be .json, .sqlite, or .db")
 	}
 }
 
