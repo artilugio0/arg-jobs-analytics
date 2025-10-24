@@ -37,13 +37,10 @@ type JobInput struct {
 // JobAnalysis represents the desired structured output for a single job.
 // NOTE: Field names are intentionally lowercase to match the requested JSON schema keys.
 type JobAnalysis struct {
-	JobID                string   `json:"job_id"`
-	Seniority            string   `json:"seniority"`
-	MandatorySkills      []string `json:"mandatory_skills"`
-	NiceToHaveSkills     []string `json:"nice_to_have_skills"`
-	MandatoryExperience  []string `json:"mandatory_experience"`
-	NiceToHaveExperience []string `json:"nice_to_have_experience"`
-	OnsiteHybridRemote   string   `json:"onsite_hybrid_remote"`
+	JobID              string   `json:"job_id"`
+	Seniority          string   `json:"seniority"`
+	Skills             []string `json:"skills"`
+	OnsiteHybridRemote string   `json:"onsite_hybrid_remote"`
 }
 
 // --- Main Logic ---
@@ -127,11 +124,11 @@ func createBatches(jobs []JobInput) [][]JobInput {
 	maxInputTokens := MAX_TOKENS_PER_REQUEST - SYSTEM_OVERHEAD_TOKENS
 	maxInputChars := maxInputTokens * TOKEN_TO_CHAR_RATIO
 	if maxInputChars <= 0 {
-		fmt.Printf("Warning: Calculated max input characters is non-positive (%d). Using a default of 4000.\n", maxInputChars)
+		log.Printf("Warning: Calculated max input characters is non-positive (%d). Using a default of 4000.\n", maxInputChars)
 		maxInputChars = 4000
 	}
 
-	fmt.Printf("Maximum estimated input characters per request: %d (approx %d tokens).\n", maxInputChars, maxInputTokens)
+	log.Printf("Maximum estimated input characters per request: %d (approx %d tokens).\n", maxInputChars, maxInputTokens)
 
 	var batches [][]JobInput
 	var currentBatch []JobInput
@@ -182,15 +179,14 @@ IMPORTANT: the answer MUST have EXACTLY ONE object per JobID.
 
 Crucial formatting rules:
 1. Ensure the "job_id" field in the output matches the "Job ID" from the input.
-2. For all array fields (skills and experience), each item MUST be a single, atomic, machine-readable keyword or concept.
+2. ONLY include technical skills in the skills array.
+3. THIS IS VERY IMPORTANT:  For the skills array, each item MUST be a single, atomic, machine-readable keyword.
    - DO NOT use full sentences, verbose explanations, or parenthetical remarks.
-   - Example (Good): "GCP", "Kubernetes", "Data Modeling".
+   - Example (Good): "gcp", "kubernetes", "data_modeling".
    - Example (Bad): "Experience with Cloud technologies (AWS/Azure)", "Must have 5+ years of experience in the industry".
-3. Use only the allowed enum values for "onsite_hybrid_remote": "On Site", "Hybrid", or "Remote".
-4. Use only the allowed enum values for "seniority": "Junior", "Semisenior", or "Senior".
-5. You must ONLY use information explicitly present or clearly implied by the job text. 
+4. You must ONLY use information explicitly present or clearly implied by the job text. 
 	**If information for any field other than 'job_id' is NOT found, you MUST omit that field entirely** from the JSON object. 
-	For array fields (skills and experience), if no items are found, the model must return an **empty array (\[])** or omit the field. 
+	For the skills array field, if no items are found, the model must return an **empty array (\[])**.
 	DO NOT make up, infer, or hallucinate any missing data. Keep all array values concise and in lowercase. 
 `
 
@@ -209,33 +205,18 @@ Crucial formatting rules:
 					Description: "The seniority level of the job.",
 					Enum:        []string{"Junior", "Semisenior", "Senior"},
 				},
-				"mandatory_skills": {
+				"skills": {
 					Type:        genai.TypeArray,
-					Description: "List of skills that are mandatory for the job. Use atomic keywords (e.g., 'Python', 'React', 'Terraform').",
-					Items:       &genai.Schema{Type: genai.TypeString},
-				},
-				"nice_to_have_skills": {
-					Type:        genai.TypeArray,
-					Description: "List of skills that are nice to have but not mandatory. Use atomic keywords.",
-					Items:       &genai.Schema{Type: genai.TypeString},
-				},
-				"mandatory_experience": {
-					Type:        genai.TypeArray,
-					Description: "List of experiences that are mandatory for the job. Use atomic keywords (e.g., '3 years', 'Financial Sector', 'Team Leadership').",
-					Items:       &genai.Schema{Type: genai.TypeString},
-				},
-				"nice_to_have_experience": {
-					Type:        genai.TypeArray,
-					Description: "List of experiences that are nice to have but not mandatory. Use atomic keywords.",
+					Description: "List of skills for the job.",
 					Items:       &genai.Schema{Type: genai.TypeString},
 				},
 				"onsite_hybrid_remote": {
 					Type:        genai.TypeString,
 					Description: "The work arrangement for the job.",
-					Enum:        []string{"On Site", "Hybrid", "Remote"},
+					Enum:        []string{"on_site", "hybrid", "remote"},
 				},
 			},
-			Required: []string{"job_id"},
+			Required: []string{"job_id", "skills"},
 		},
 	}
 
